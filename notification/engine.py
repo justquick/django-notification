@@ -45,13 +45,24 @@ def send_all():
         try:
             for queued_batch in NoticeQueueBatch.objects.all():
                 notices = pickle.loads(str(queued_batch.pickled_data).decode("base64"))
+                batch_sent = 0
                 for user, label, extra_context, on_site, sender in notices:
-                    user = User.objects.get(pk=user)
-                    logging.info("emitting notice to %s" % user)
-                    # call this once per user to be atomic and allow for logging to
-                    # accurately show how long each takes.
-                    notification.send_now([user], label, extra_context, on_site, sender)
-                    sent += 1
+                    try:
+                        user = User.objects.get(pk=user)
+                        logging.info("emitting notice to %s" % user)
+                        # call this once per user to be atomic and allow for logging to
+                        # accurately show how long each takes.
+                        notification.send_now([user], label, extra_context, on_site, sender)
+                        sent += 1
+                        batch_sent += 1
+                    except:
+                        # get the exception
+                        _, e, _ = sys.exc_info()
+                        # log it as critical
+                        logging.critical("an exception occurred: %r" % e)
+                        # update the queued_batch, removing notices that had been sucessfully sent
+                        queued_batch.pickled_data = pickle.dumps(notices[batch_sent:]).encode("base64")
+                        queued_batch.save()
                 queued_batch.delete()
                 batches += 1
         except:
